@@ -93,7 +93,7 @@ export function DriverAuthForm() {
       {mode === "first" && firstStep === "identify" ? (
         <form className="form-stack" onSubmit={(event) => { event.preventDefault(); void startFirstAccess(); }}>
           <label><span>ID do motorista</span><div className="field"><IdCard size={18} /><input value={first.driverCode} onChange={(event) => setFirst({ ...first, driverCode: event.target.value })} inputMode="text" required /></div></label>
-          <label><span>Base</span><div className="field"><MapPin size={18} /><input value={first.baseKey} onChange={(event) => setFirst({ ...first, baseKey: event.target.value })} inputMode="text" required /></div></label>
+          <label><span>Sigla da base</span><div className="field"><MapPin size={18} /><input value={first.baseKey} onChange={(event) => setFirst({ ...first, baseKey: event.target.value })} inputMode="text" autoComplete="organization" required /></div></label>
           {message ? <p className="form-message">{message}</p> : null}
           <button className="primary-action" disabled={loading} type="submit"><ArrowRight size={18} />Continuar</button>
         </form>

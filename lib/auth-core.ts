@@ -15,6 +15,10 @@ export function normalizeBaseKey(value: unknown) {
   return String(value ?? "").trim().toUpperCase().replace(/\s+/g, " ");
 }
 
+export function normalizeBaseSigla(value: unknown) {
+  return String(value ?? "").trim().toUpperCase().replace(/[^A-Z0-9]+/g, "");
+}
+
 export function validatePin(pin: unknown) {
   return PIN_PATTERN.test(String(pin ?? ""));
 }
@@ -56,4 +60,3 @@ export function isRateLimited(failedAttempts: Array<{ created_at?: string | null
 export function genericAuthError() {
   return "Nao foi possivel validar os dados informados.";
 }
-

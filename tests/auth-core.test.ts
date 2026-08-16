@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hashPin, isRateLimited, normalizeBaseKey, normalizeDriverCode, validatePin, verifyPin } from "@/lib/auth-core";
+import { hashPin, isRateLimited, normalizeBaseKey, normalizeBaseSigla, normalizeDriverCode, validatePin, verifyPin } from "@/lib/auth-core";
 
 describe("autenticacao PIN do motorista", () => {
   it("aceita exatamente 4 numeros", () => {
@@ -31,5 +31,9 @@ describe("autenticacao PIN do motorista", () => {
     expect(normalizeDriverCode(" mot-123.0 ")).toBe("MOT1230");
     expect(normalizeBaseKey(" base  sao   paulo ")).toBe("BASE SAO PAULO");
   });
-});
 
+  it("normaliza sigla de base para o primeiro acesso", () => {
+    expect(normalizeBaseSigla(" smg 1 ")).toBe("SMG1");
+    expect(normalizeBaseSigla("SMG-1")).toBe("SMG1");
+  });
+});
