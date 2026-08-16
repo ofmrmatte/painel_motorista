@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import "./profile-stage.css";
 
 export const metadata: Metadata = {
   title: "Portal do Motorista ALC",
@@ -34,4 +35,3 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     </html>
   );
 }
-
