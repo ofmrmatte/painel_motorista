@@ -18,6 +18,12 @@ import {
   UserRound,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/format";
+import {
+  PaymentsView,
+  paymentOptionLabel,
+  paymentWeekLabel,
+  type PaymentDocument,
+} from "./payments-view";
 
 type Tab = "home" | "tickets" | "payments" | "disputes" | "profile";
 type TicketView = "active" | "history";
@@ -34,14 +40,6 @@ interface Ticket {
   status: string;
   detail?: string;
   source?: string;
-}
-
-interface DocumentRow {
-  id: string;
-  title: string;
-  period?: string;
-  status: string;
-  active_version_id?: string;
 }
 
 interface DisputeRow {
@@ -64,7 +62,7 @@ interface NotificationRow {
 export interface PortalPayload {
   driver: { fullName: string; driverCode: string; baseKey: string; sigla?: string };
   tickets: Ticket[];
-  documents: DocumentRow[];
+  documents: PaymentDocument[];
   disputes: DisputeRow[];
   notifications: NotificationRow[];
 }
@@ -115,14 +113,6 @@ function formatDate(value?: string) {
   if (br) return `${br[1]}/${br[2]}/${br[3]}`;
 
   return value;
-}
-
-function formatWeek(period?: string) {
-  if (!period) return "Período não informado";
-  const dates = [...period.matchAll(/(\d{2})\/(\d{2})\/(\d{4})/g)];
-  if (dates.length >= 2) return `Semana: ${dates[0][1]}/${dates[0][2]} a ${dates[1][1]}/${dates[1][2]}`;
-  if (dates.length === 1) return `Semana: ${dates[0][1]}/${dates[0][2]}`;
-  return `Semana: ${period}`;
 }
 
 function isOpenDispute(status: string) {
@@ -211,7 +201,7 @@ export function PortalApp({ initialData }: { initialData: PortalPayload }) {
   const notifications = useMemo(() => data.notifications ?? [], [data]);
   const unread = notifications.filter((item) => !item.read_at).length;
   const publishedDocuments = documents.filter((doc) => doc.status === "published");
-  const availableDocuments = publishedDocuments.length ? publishedDocuments : documents;
+  const availableDocuments = publishedDocuments;
   const latestDocument = availableDocuments[0];
   const openDisputes = disputes.filter((dispute) => isOpenDispute(dispute.status));
   const ticketViewRows = ticketView === "active" ? activeTickets : historyTickets;
@@ -239,6 +229,11 @@ export function PortalApp({ initialData }: { initialData: PortalPayload }) {
     }
     const payload = await response.json();
     window.open(payload.url, "_blank", "noopener,noreferrer");
+  }
+
+  function contestDocument(id: string) {
+    setContest((current) => ({ ...current, documentId: id }));
+    navigate("disputes");
   }
 
   async function markNotificationRead(id: string) {
@@ -351,7 +346,7 @@ export function PortalApp({ initialData }: { initialData: PortalPayload }) {
             <button className="summary-card" onClick={() => navigate("payments")}>
               <span className="summary-icon"><CreditCard size={19} /></span>
               <strong>{availableDocuments.length}</strong>
-              <span className="summary-copy"><b>Pagamentos</b><small>{latestDocument ? formatWeek(latestDocument.period) : "Nenhum disponível"}</small></span>
+              <span className="summary-copy"><b>Pagamentos</b><small>{latestDocument ? paymentWeekLabel(latestDocument.period) : "Nenhum disponível"}</small></span>
             </button>
             <button className="summary-card" onClick={() => navigate("disputes")}>
               <span className="summary-icon"><MessageSquarePlus size={19} /></span>
@@ -417,21 +412,7 @@ export function PortalApp({ initialData }: { initialData: PortalPayload }) {
       ) : null}
 
       {tab === "payments" ? (
-        <section className="screen-stack">
-          <h2>Pagamentos</h2>
-          <div className="list-stack">
-            {documents.map((doc) => (
-              <article className="item-card" key={doc.id}>
-                <div><strong>{doc.title}</strong><span>{doc.period || "Período não informado"} · {statusLabel(doc.status)}</span></div>
-                <div className="action-row">
-                  <button onClick={() => void openDocument(doc.id)}>Abrir PDF</button>
-                  <button onClick={() => { setContest({ ...contest, documentId: doc.id }); navigate("disputes"); }}>Contestar</button>
-                </div>
-              </article>
-            ))}
-            {!documents.length ? <div className="empty-state">Nenhum PDF publicado.</div> : null}
-          </div>
-        </section>
+        <PaymentsView documents={documents} onOpen={openDocument} onContest={contestDocument} />
       ) : null}
 
       {tab === "disputes" ? (
@@ -440,7 +421,7 @@ export function PortalApp({ initialData }: { initialData: PortalPayload }) {
           <div className="mobile-card">
             <select value={contest.documentId} onChange={(event) => setContest({ ...contest, documentId: event.target.value })}>
               <option value="">Selecione o PDF</option>
-              {documents.map((doc) => <option key={doc.id} value={doc.id}>{doc.title}</option>)}
+              {publishedDocuments.map((doc) => <option key={doc.id} value={doc.id}>{paymentOptionLabel(doc)}</option>)}
             </select>
             <input value={contest.reason} onChange={(event) => setContest({ ...contest, reason: event.target.value })} placeholder="Motivo" />
             <input value={contest.reference} onChange={(event) => setContest({ ...contest, reference: event.target.value })} placeholder="Referência do lançamento" />
