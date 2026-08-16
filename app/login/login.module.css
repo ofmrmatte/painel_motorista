@@ -1,8 +1,12 @@
 .shell {
   min-height: 100svh;
+  min-height: 100dvh;
   display: grid;
   grid-template-rows: auto 1fr auto;
-  padding: max(18px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  padding-top: max(18px, env(safe-area-inset-top, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
   background:
     radial-gradient(circle at top right, rgba(217, 45, 50, .08), transparent 34%),
     linear-gradient(180deg, #ffffff 0%, #f7f5f2 100%);
@@ -130,8 +134,8 @@
 
 @media (max-width: 350px) {
   .shell {
-    padding-left: 12px;
-    padding-right: 12px;
+    padding-right: max(12px, env(safe-area-inset-right, 0px));
+    padding-left: max(12px, env(safe-area-inset-left, 0px));
   }
 
   .brand img {
@@ -147,10 +151,41 @@
   }
 }
 
+@media (orientation: landscape) and (max-height: 520px) {
+  .shell {
+    grid-template-rows: auto 1fr;
+    padding-top: max(10px, env(safe-area-inset-top, 0px));
+    padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .brand img {
+    width: 92px;
+  }
+
+  .content {
+    align-content: start;
+    gap: 10px;
+    padding: 10px 0 6px;
+  }
+
+  .intro h1 {
+    font-size: 21px;
+  }
+
+  .intro p,
+  .footer {
+    display: none;
+  }
+
+  .panel {
+    padding: 12px;
+  }
+}
+
 @media (min-width: 700px) {
   .shell {
-    padding-left: 24px;
-    padding-right: 24px;
+    padding-right: max(24px, env(safe-area-inset-right, 0px));
+    padding-left: max(24px, env(safe-area-inset-left, 0px));
   }
 
   .panel {
