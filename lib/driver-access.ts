@@ -33,6 +33,20 @@ export function getEffectiveDriverPortalAccess(driver: DbRow | null | undefined,
   };
 }
 
+export async function loadDriverPortalBaseAccessKey(driver: DbRow | null | undefined) {
+  const fallback = driverPortalBaseAccessKey(driver?.base_key, driver?.sigla);
+  const baseKey = textValue(driver?.base_key);
+  if (!baseKey) return fallback;
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("operational_bases")
+    .select("sigla")
+    .eq("base_key", baseKey)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return driverPortalBaseAccessKey(baseKey, textValue(data?.sigla) || driver?.sigla);
+}
+
 export async function loadDriverPortalBaseEnabled(baseKey: unknown) {
   const normalized = driverPortalBaseAccessKey(baseKey);
   if (!normalized) return false;
@@ -47,6 +61,7 @@ export async function loadDriverPortalBaseEnabled(baseKey: unknown) {
 }
 
 export async function loadEffectiveDriverPortalAccess(driver: DbRow | null | undefined) {
-  const baseEnabled = await loadDriverPortalBaseEnabled(driverPortalBaseAccessKey(driver?.base_key, driver?.sigla));
+  const accessKey = await loadDriverPortalBaseAccessKey(driver);
+  const baseEnabled = await loadDriverPortalBaseEnabled(accessKey);
   return getEffectiveDriverPortalAccess(driver, baseEnabled);
 }

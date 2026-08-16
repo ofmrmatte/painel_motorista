@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { genericAuthError, isRateLimited, normalizeBaseSigla, normalizeDriverCode } from "@/lib/auth-core";
-import { loadEffectiveDriverPortalAccess } from "@/lib/driver-access";
+import { loadDriverPortalBaseAccessKey, loadEffectiveDriverPortalAccess } from "@/lib/driver-access";
 import { createSetupToken, recentFailedAttempts, recordAuthAttempt, requestOrigin } from "@/lib/driver-session";
 import { textValue } from "@/lib/format";
 import { createAdminClient } from "@/lib/supabase-admin";
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     const { data: driver, error } = await admin.from("alc_drivers").select("*").eq("driver_code", driverCode).maybeSingle();
     if (error) throw new Error(error.message);
     driverId = textValue(driver?.id) || null;
-    const driverSigla = normalizeBaseSigla(driver?.sigla);
+    const driverSigla = normalizeBaseSigla(await loadDriverPortalBaseAccessKey(driver));
     const portalStatus = textValue(driver?.portal_status);
     const access = await loadEffectiveDriverPortalAccess(driver);
     if (!driver || driverSigla !== baseSigla || !access.allowed) {
