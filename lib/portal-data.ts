@@ -29,6 +29,23 @@ function ticketDateSortValue(value: unknown) {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
+function mapDisputeMessages(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((message) => {
+      const row = message as DbRow;
+      return {
+        id: textValue(row.id),
+        body: textValue(row.body),
+        created_at: textValue(row.created_at),
+        author_driver_id: textValue(row.author_driver_id) || undefined,
+        author_admin_id: textValue(row.author_admin_id) || undefined,
+      };
+    })
+    .filter((message) => message.body)
+    .sort((a, b) => ticketDateSortValue(a.created_at) - ticketDateSortValue(b.created_at));
+}
+
 export async function loadDriverPortalPayload(driver: DbRow) {
   const admin = createAdminClient();
   const driverId = textValue(driver.id);
@@ -178,7 +195,11 @@ export async function loadDriverPortalPayload(driver: DbRow) {
       status: textValue(row.status),
       decision: textValue(row.decision),
       description: textValue(row.description),
-      driver_payment_documents: (row.driver_payment_documents as { title?: string } | null) ?? undefined,
+      reference: textValue(row.reference),
+      amount: row.amount == null || textValue(row.amount) === "" ? null : numberValue(row.amount),
+      created_at: textValue(row.created_at),
+      updated_at: textValue(row.updated_at),
+      messages: mapDisputeMessages(row.driver_dispute_messages),
     })),
     notifications: notificationRows.map((row) => ({
       id: textValue(row.id),
