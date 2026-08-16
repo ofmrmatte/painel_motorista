@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import "./profile-stage.css";
+import "./responsive-mobile.css";
 
 export const metadata: Metadata = {
   title: "Portal do Motorista ALC",

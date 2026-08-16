@@ -232,7 +232,10 @@
   inset: 0;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding-top: max(24px, env(safe-area-inset-top, 0px));
+  padding-right: max(24px, env(safe-area-inset-right, 0px));
+  padding-bottom: max(24px, env(safe-area-inset-bottom, 0px));
+  padding-left: max(24px, env(safe-area-inset-left, 0px));
   background: rgba(247, 245, 242, .78);
   backdrop-filter: blur(5px);
   -webkit-backdrop-filter: blur(5px);
@@ -281,4 +284,14 @@
   .primaryAction,
   .secondaryAction { min-height: 47px; }
   .formHeading strong { font-size: 16px; }
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .authStack { gap: 11px; }
+  .form { gap: 9px; }
+  .formHeading { display: none; }
+  .field { min-height: 45px; }
+  .primaryAction,
+  .secondaryAction { min-height: 44px; }
+  .loadingCard { padding: 18px 16px; }
 }
