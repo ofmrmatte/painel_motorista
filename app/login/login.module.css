@@ -1,0 +1,159 @@
+.shell {
+  min-height: 100svh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  padding: max(18px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  background:
+    radial-gradient(circle at top right, rgba(217, 45, 50, .08), transparent 34%),
+    linear-gradient(180deg, #ffffff 0%, #f7f5f2 100%);
+}
+
+.brand {
+  width: min(100%, 430px);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.brand img {
+  width: 112px;
+  height: auto;
+  object-fit: contain;
+}
+
+.portalLabel {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid #efc9cb;
+  border-radius: 999px;
+  color: #b52228;
+  background: #fff5f5;
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.content {
+  width: min(100%, 430px);
+  margin: 0 auto;
+  display: grid;
+  align-content: center;
+  gap: 18px;
+  padding: 20px 0 12px;
+}
+
+.intro {
+  display: grid;
+  gap: 6px;
+}
+
+.intro span {
+  color: #d92d32;
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.intro h1 {
+  margin: 0;
+  max-width: 340px;
+  color: #171717;
+  font-size: clamp(27px, 8vw, 34px);
+  line-height: 1.02;
+  letter-spacing: -.035em;
+}
+
+.intro p {
+  margin: 0;
+  max-width: 360px;
+  color: #746e69;
+  font-size: 12px;
+  line-height: 1.5;
+  font-weight: 600;
+}
+
+.panel {
+  padding: 17px;
+  border: 1px solid #e2ddd7;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .96);
+  box-shadow: 0 16px 44px rgba(32, 27, 22, .07);
+}
+
+.footer {
+  width: min(100%, 430px);
+  margin: 0 auto;
+  color: #9a938d;
+  font-size: 9.5px;
+  line-height: 1.4;
+  font-weight: 650;
+  text-align: center;
+}
+
+@media (max-height: 670px) {
+  .shell {
+    grid-template-rows: auto 1fr;
+  }
+
+  .content {
+    align-content: start;
+    gap: 12px;
+    padding-top: 14px;
+  }
+
+  .intro {
+    gap: 4px;
+  }
+
+  .intro h1 {
+    font-size: 24px;
+  }
+
+  .intro p,
+  .footer {
+    display: none;
+  }
+
+  .panel {
+    padding: 14px;
+  }
+}
+
+@media (max-width: 350px) {
+  .shell {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .brand img {
+    width: 98px;
+  }
+
+  .portalLabel {
+    font-size: 8px;
+  }
+
+  .content {
+    padding-top: 14px;
+  }
+}
+
+@media (min-width: 700px) {
+  .shell {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+
+  .panel {
+    padding: 20px;
+  }
+}
