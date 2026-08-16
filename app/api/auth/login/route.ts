@@ -21,7 +21,12 @@ export async function POST(request: Request) {
     const parsed = schema.parse(await request.json());
     driverCode = normalizeDriverCode(parsed.driverCode);
     if (!driverCode || !validatePin(parsed.pin)) throw new Error("invalid_input");
-    if (isRateLimited(await recentFailedAttempts("login", driverCode, origin))) throw new Error("rate_limited");
+    const [driverFailures, originFailures, combinedFailures] = await Promise.all([
+      recentFailedAttempts("login", { driverCode }),
+      recentFailedAttempts("login", { origin }),
+      recentFailedAttempts("login", { driverCode, origin }),
+    ]);
+    if (isRateLimited(driverFailures) || isRateLimited(originFailures) || isRateLimited(combinedFailures)) throw new Error("rate_limited");
 
     const admin = createAdminClient();
     const driverResult = await admin.from("alc_drivers").select("*").eq("driver_code", driverCode).maybeSingle();

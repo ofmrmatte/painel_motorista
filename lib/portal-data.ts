@@ -1,5 +1,6 @@
 import { normalizeDriverCode } from "@/lib/auth-core";
 import { numberValue, textValue } from "@/lib/format";
+import { readPaged } from "@/lib/pagination";
 import { createAdminClient } from "@/lib/supabase-admin";
 
 type DbRow = Record<string, unknown>;
@@ -18,18 +19,72 @@ export async function loadDriverPortalPayload(driver: DbRow) {
   const admin = createAdminClient();
   const driverId = textValue(driver.id);
   const driverCode = textValue(driver.driver_code);
-  const [prefatura, pnr, risk, documents, disputes, notifications] = await Promise.all([
-    admin.from("prefatura_records").select("id,shipment_id,route_id,operation,route_date,base_key,base_name,sigla,driver_id,driver_name,value,created_at").eq("driver_id", driverCode).limit(500),
-    admin.from("pnr_records").select("id,shipment_id,route_id,status,case_date,base_key,sigla,driver_id,purchase_value,created_at").eq("driver_id", driverCode).limit(500),
-    admin.from("risk_lm_records").select("id,shipment_id,route_id,failure_date,base_key,sigla,driver_id,gmv_brl,failure_reason,created_at").eq("driver_id", driverCode).limit(500),
-    admin.from("driver_payment_documents").select("*,driver_payment_document_versions(id,version_number,status,created_at)").eq("driver_id", driverId).in("status", ["published", "superseded"]).order("created_at", { ascending: false }).limit(200),
-    admin.from("driver_disputes").select("*,driver_payment_documents(title),driver_dispute_messages(*)").eq("driver_id", driverId).order("created_at", { ascending: false }).limit(200),
-    admin.from("driver_notifications").select("*").eq("driver_id", driverId).order("created_at", { ascending: false }).limit(100),
+  const [prefaturaRows, pnrRows, riskRows, documentRows, disputeRows, notificationRows] = await Promise.all([
+    readPaged<DbRow>(async (offset, pageSize) => {
+      const { data, error, count } = await admin
+        .from("prefatura_records")
+        .select("id,shipment_id,route_id,operation,route_date,base_key,base_name,sigla,driver_id,driver_name,value,created_at", { count: "exact" })
+        .eq("driver_id", driverCode)
+        .order("created_at", { ascending: false })
+        .range(offset, offset + pageSize - 1);
+      if (error) throw new Error(error.message);
+      return { rows: (data ?? []) as DbRow[], count };
+    }),
+    readPaged<DbRow>(async (offset, pageSize) => {
+      const { data, error, count } = await admin
+        .from("pnr_records")
+        .select("id,shipment_id,route_id,status,case_date,base_key,sigla,driver_id,purchase_value,created_at", { count: "exact" })
+        .eq("driver_id", driverCode)
+        .order("created_at", { ascending: false })
+        .range(offset, offset + pageSize - 1);
+      if (error) throw new Error(error.message);
+      return { rows: (data ?? []) as DbRow[], count };
+    }),
+    readPaged<DbRow>(async (offset, pageSize) => {
+      const { data, error, count } = await admin
+        .from("risk_lm_records")
+        .select("id,shipment_id,route_id,failure_date,base_key,sigla,driver_id,gmv_brl,failure_reason,created_at", { count: "exact" })
+        .eq("driver_id", driverCode)
+        .order("created_at", { ascending: false })
+        .range(offset, offset + pageSize - 1);
+      if (error) throw new Error(error.message);
+      return { rows: (data ?? []) as DbRow[], count };
+    }),
+    readPaged<DbRow>(async (offset, pageSize) => {
+      const { data, error, count } = await admin
+        .from("driver_payment_documents")
+        .select("*,driver_payment_document_versions(id,version_number,status,created_at)", { count: "exact" })
+        .eq("driver_id", driverId)
+        .in("status", ["published", "superseded"])
+        .order("created_at", { ascending: false })
+        .range(offset, offset + pageSize - 1);
+      if (error) throw new Error(error.message);
+      return { rows: (data ?? []) as DbRow[], count };
+    }),
+    readPaged<DbRow>(async (offset, pageSize) => {
+      const { data, error, count } = await admin
+        .from("driver_disputes")
+        .select("*,driver_payment_documents(title),driver_dispute_messages(*)", { count: "exact" })
+        .eq("driver_id", driverId)
+        .order("created_at", { ascending: false })
+        .range(offset, offset + pageSize - 1);
+      if (error) throw new Error(error.message);
+      return { rows: (data ?? []) as DbRow[], count };
+    }),
+    readPaged<DbRow>(async (offset, pageSize) => {
+      const { data, error, count } = await admin
+        .from("driver_notifications")
+        .select("*", { count: "exact" })
+        .eq("driver_id", driverId)
+        .order("created_at", { ascending: false })
+        .range(offset, offset + pageSize - 1);
+      if (error) throw new Error(error.message);
+      return { rows: (data ?? []) as DbRow[], count };
+    }),
   ]);
-  for (const result of [prefatura, pnr, risk, documents, disputes, notifications]) if (result.error) throw new Error(result.error.message);
 
   const tickets = [
-    ...((prefatura.data ?? []) as DbRow[]).map((row) => {
+    ...prefaturaRows.map((row) => {
       const operation = textValue(row.operation);
       const date = textValue(row.route_date) || textValue(row.created_at);
       return {
@@ -49,7 +104,7 @@ export async function loadDriverPortalPayload(driver: DbRow) {
         detail: operation === "PNR" ? "Desconto PNR vinculado ao pacote." : "Pacote perdido lançado para conferencia.",
       };
     }),
-    ...((pnr.data ?? []) as DbRow[]).map((row) => {
+    ...pnrRows.map((row) => {
       const status = pnrStatusToTicket(textValue(row.status));
       return {
         id: `pnr:${textValue(row.id)}`,
@@ -68,7 +123,7 @@ export async function loadDriverPortalPayload(driver: DbRow) {
         detail: textValue(row.status) || "Status operacional recebido no relatorio PNR.",
       };
     }),
-    ...((risk.data ?? []) as DbRow[]).map((row) => ({
+    ...riskRows.map((row) => ({
       id: `risk:${textValue(row.id)}`,
       type: "pendente",
       operationalId: textValue(row.shipment_id),
@@ -96,9 +151,27 @@ export async function loadDriverPortalPayload(driver: DbRow) {
       portalStatus: textValue(driver.portal_status),
     },
     tickets,
-    documents: documents.data ?? [],
-    disputes: disputes.data ?? [],
-    notifications: notifications.data ?? [],
+    documents: documentRows.map((row) => ({
+      id: textValue(row.id),
+      title: textValue(row.title),
+      period: textValue(row.period),
+      status: textValue(row.status),
+      active_version_id: textValue(row.active_version_id),
+    })),
+    disputes: disputeRows.map((row) => ({
+      id: textValue(row.id),
+      document_id: textValue(row.document_id),
+      reason: textValue(row.reason),
+      status: textValue(row.status),
+      decision: textValue(row.decision),
+      description: textValue(row.description),
+      driver_payment_documents: (row.driver_payment_documents as { title?: string } | null) ?? undefined,
+    })),
+    notifications: notificationRows.map((row) => ({
+      id: textValue(row.id),
+      title: textValue(row.title),
+      body: textValue(row.body),
+      read_at: textValue(row.read_at) || null,
+    })),
   };
 }
-

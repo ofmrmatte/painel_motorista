@@ -23,7 +23,12 @@ export async function POST(request: Request) {
     driverCode = normalizeDriverCode(parsed.driverCode);
     baseKey = normalizeBaseKey(parsed.baseKey);
     if (!driverCode || !baseKey) throw new Error("invalid_input");
-    if (isRateLimited(await recentFailedAttempts("first_access", driverCode, origin))) throw new Error("rate_limited");
+    const [driverFailures, originFailures, combinedFailures] = await Promise.all([
+      recentFailedAttempts("first_access", { driverCode }),
+      recentFailedAttempts("first_access", { origin }),
+      recentFailedAttempts("first_access", { driverCode, origin }),
+    ]);
+    if (isRateLimited(driverFailures) || isRateLimited(originFailures) || isRateLimited(combinedFailures)) throw new Error("rate_limited");
 
     const admin = createAdminClient();
     const { data: driver, error } = await admin.from("alc_drivers").select("*").eq("driver_code", driverCode).maybeSingle();
@@ -54,4 +59,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: genericAuthError() }, { status: 400 });
   }
 }
-

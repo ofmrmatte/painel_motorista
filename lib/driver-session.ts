@@ -70,24 +70,26 @@ export async function createSetupToken(driverId: string, origin: string) {
   cookieStore.set(SETUP_COOKIE, token, cookieOptions(SETUP_MINUTES * 60));
 }
 
-export async function consumeSetupToken() {
+export async function consumeSetupToken(): Promise<DbRow | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(SETUP_COOKIE)?.value;
   if (!token) return null;
   const admin = createAdminClient();
   const tokenHash = hashToken(token, pinPepper());
-  const { data, error } = await admin
+  const consumed = await admin
     .from("driver_portal_setup_tokens")
-    .select("*,alc_drivers(*)")
+    .update({ used_at: new Date().toISOString() })
     .eq("token_hash", tokenHash)
     .is("used_at", null)
     .gt("expires_at", new Date().toISOString())
+    .select("*")
     .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!data) return null;
-  await admin.from("driver_portal_setup_tokens").update({ used_at: new Date().toISOString() }).eq("id", textValue(data.id));
+  if (consumed.error) throw new Error(consumed.error.message);
+  if (!consumed.data) return null;
+  const driver = await admin.from("alc_drivers").select("*").eq("id", textValue(consumed.data.driver_id)).maybeSingle();
+  if (driver.error) throw new Error(driver.error.message);
   cookieStore.delete(SETUP_COOKIE);
-  return data as DbRow;
+  return { ...(consumed.data as DbRow), alc_drivers: driver.data ?? null };
 }
 
 export async function currentDriver() {
@@ -135,19 +137,17 @@ export async function recordAuthAttempt(input: {
   });
 }
 
-export async function recentFailedAttempts(kind: "first_access" | "login" | "pin_create", driverCode: string, origin: string) {
+export async function recentFailedAttempts(kind: "first_access" | "login" | "pin_create", filters: { driverCode?: string; origin?: string }) {
   const admin = createAdminClient();
   const since = new Date(Date.now() - 15 * 60000).toISOString();
-  const { data, error } = await admin
+  let query = admin
     .from("driver_portal_auth_attempts")
     .select("created_at,success")
     .eq("kind", kind)
-    .eq("driver_code", normalizeDriverCode(driverCode))
-    .eq("origin", origin)
-    .gte("created_at", since)
-    .order("created_at", { ascending: false })
-    .limit(20);
+    .gte("created_at", since);
+  if (filters.driverCode) query = query.eq("driver_code", normalizeDriverCode(filters.driverCode));
+  if (filters.origin) query = query.eq("origin", filters.origin);
+  const { data, error } = await query.order("created_at", { ascending: false }).limit(100);
   if (error) throw new Error(error.message);
   return data ?? [];
 }
-
