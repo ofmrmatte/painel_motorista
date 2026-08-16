@@ -19,8 +19,12 @@ import {
 } from "lucide-react";
 import { formatCurrency } from "@/lib/format";
 import {
+  DisputesView,
+  type ContestDraft,
+  type DisputeRecord,
+} from "./disputes-view";
+import {
   PaymentsView,
-  paymentOptionLabel,
   paymentWeekLabel,
   type PaymentDocument,
 } from "./payments-view";
@@ -42,16 +46,6 @@ interface Ticket {
   source?: string;
 }
 
-interface DisputeRow {
-  id: string;
-  document_id: string;
-  reason: string;
-  status: string;
-  decision?: string;
-  description?: string;
-  driver_payment_documents?: { title?: string };
-}
-
 interface NotificationRow {
   id: string;
   title: string;
@@ -63,9 +57,17 @@ export interface PortalPayload {
   driver: { fullName: string; driverCode: string; baseKey: string; sigla?: string };
   tickets: Ticket[];
   documents: PaymentDocument[];
-  disputes: DisputeRow[];
+  disputes: DisputeRecord[];
   notifications: NotificationRow[];
 }
+
+const emptyContest: ContestDraft = {
+  documentId: "",
+  reason: "",
+  reference: "",
+  amount: "",
+  description: "",
+};
 
 async function readError(response: Response, fallback: string) {
   return response.json().then((body) => body.error || fallback).catch(() => fallback);
@@ -115,9 +117,34 @@ function formatDate(value?: string) {
   return value;
 }
 
+function normalizeDisputeStatus(status: string) {
+  return status
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replaceAll("-", "_")
+    .replaceAll(" ", "_");
+}
+
 function isOpenDispute(status: string) {
-  const closed = new Set(["resolved", "closed", "approved", "rejected", "finalized", "resolvido", "encerrado"]);
-  return !closed.has(status.toLowerCase());
+  const closed = new Set([
+    "resolved",
+    "closed",
+    "approved",
+    "rejected",
+    "finalized",
+    "resolvido",
+    "resolvida",
+    "encerrado",
+    "encerrada",
+    "aprovado",
+    "aprovada",
+    "recusado",
+    "recusada",
+    "finalizado",
+    "finalizada",
+  ]);
+  return !closed.has(normalizeDisputeStatus(status));
 }
 
 function isClosedTicket(status: string) {
@@ -168,7 +195,8 @@ export function PortalApp({ initialData }: { initialData: PortalPayload }) {
   const [ticketView, setTicketView] = useState<TicketView>("active");
   const [ticketCategoryFilter, setTicketCategoryFilter] = useState<TicketCategory>("all");
   const [ticketQuery, setTicketQuery] = useState("");
-  const [contest, setContest] = useState({ documentId: "", reason: "", reference: "", amount: "", description: "" });
+  const [contest, setContest] = useState<ContestDraft>(emptyContest);
+  const [disputeSubmitting, setDisputeSubmitting] = useState(false);
 
   function navigate(nextTab: Tab) {
     setNotificationsOpen(false);
@@ -236,6 +264,10 @@ export function PortalApp({ initialData }: { initialData: PortalPayload }) {
     navigate("disputes");
   }
 
+  function updateContest(patch: Partial<ContestDraft>) {
+    setContest((current) => ({ ...current, ...patch }));
+  }
+
   async function markNotificationRead(id: string) {
     const notification = notifications.find((item) => item.id === id);
     if (!notification || notification.read_at) return;
@@ -259,19 +291,25 @@ export function PortalApp({ initialData }: { initialData: PortalPayload }) {
   }
 
   async function createDispute() {
+    if (disputeSubmitting) return;
+    setDisputeSubmitting(true);
     setMessage("");
-    const response = await fetch("/api/disputes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(contest),
-    });
-    if (!response.ok) {
-      setMessage(await readError(response, "Falha ao abrir contestação."));
-      return;
+    try {
+      const response = await fetch("/api/disputes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(contest),
+      });
+      if (!response.ok) {
+        setMessage(await readError(response, "Falha ao abrir contestação."));
+        return;
+      }
+      setContest(emptyContest);
+      navigate("disputes");
+      await load();
+    } finally {
+      setDisputeSubmitting(false);
     }
-    setContest({ documentId: "", reason: "", reference: "", amount: "", description: "" });
-    navigate("disputes");
-    await load();
   }
 
   async function logout() {
@@ -416,24 +454,14 @@ export function PortalApp({ initialData }: { initialData: PortalPayload }) {
       ) : null}
 
       {tab === "disputes" ? (
-        <section className="screen-stack">
-          <h2>Contestações</h2>
-          <div className="mobile-card">
-            <select value={contest.documentId} onChange={(event) => setContest({ ...contest, documentId: event.target.value })}>
-              <option value="">Selecione o PDF</option>
-              {publishedDocuments.map((doc) => <option key={doc.id} value={doc.id}>{paymentOptionLabel(doc)}</option>)}
-            </select>
-            <input value={contest.reason} onChange={(event) => setContest({ ...contest, reason: event.target.value })} placeholder="Motivo" />
-            <input value={contest.reference} onChange={(event) => setContest({ ...contest, reference: event.target.value })} placeholder="Referência do lançamento" />
-            <input value={contest.amount} onChange={(event) => setContest({ ...contest, amount: event.target.value })} inputMode="decimal" placeholder="Valor" />
-            <textarea value={contest.description} onChange={(event) => setContest({ ...contest, description: event.target.value })} placeholder="Descreva a contestação" />
-            <button className="primary-action" disabled={!contest.documentId || !contest.reason || !contest.description} onClick={() => void createDispute()}><MessageSquarePlus size={18} />Abrir contestação</button>
-          </div>
-          <div className="list-stack">
-            {disputes.map((dispute) => <article className="item-card" key={dispute.id}><div><strong>{dispute.reason}</strong><span>{dispute.driver_payment_documents?.title || dispute.document_id}</span></div><b>{statusLabel(dispute.status)}</b><p>{dispute.decision || dispute.description}</p></article>)}
-            {!disputes.length ? <div className="empty-state">Nenhuma contestação aberta.</div> : null}
-          </div>
-        </section>
+        <DisputesView
+          disputes={disputes}
+          documents={documents}
+          draft={contest}
+          onDraftChange={updateContest}
+          onSubmit={createDispute}
+          submitting={disputeSubmitting}
+        />
       ) : null}
 
       {tab === "profile" ? (
