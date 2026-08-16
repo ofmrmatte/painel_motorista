@@ -4,17 +4,24 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Bell,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   CreditCard,
+  History,
   Home,
   LogOut,
   MessageSquarePlus,
   Package,
   RefreshCw,
+  Search,
   UserRound,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/format";
 
 type Tab = "home" | "tickets" | "payments" | "disputes" | "profile";
+type TicketView = "active" | "history";
+type TicketCategory = "all" | "pnr" | "package" | "occurrence";
 
 interface Ticket {
   id: string;
@@ -85,11 +92,17 @@ function statusLabel(value: string) {
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : "";
 }
 
+function ticketCategory(ticket: Ticket): Exclude<TicketCategory, "all"> {
+  if (ticket.source === "pnr" || ticket.type === "pnr" || ticket.type === "aguardando_comprovante") return "pnr";
+  if (ticket.type === "pacote_perdido" || ticket.source === "prefatura") return "package";
+  return "occurrence";
+}
+
 function ticketTypeLabel(ticket: Ticket) {
-  if (ticket.source === "pnr" || ticket.type === "pnr" || ticket.type === "aguardando_comprovante") return "PNR";
-  if (ticket.type === "pacote_perdido") return "Pacote perdido";
-  if (ticket.source === "risk") return "Ocorrência";
-  return statusLabel(ticket.type);
+  const category = ticketCategory(ticket);
+  if (category === "pnr") return "PNR";
+  if (category === "package") return "Pacote perdido";
+  return "Ocorrência";
 }
 
 function formatDate(value?: string) {
@@ -117,11 +130,42 @@ function isOpenDispute(status: string) {
   return !closed.has(status.toLowerCase());
 }
 
+function isClosedTicket(status: string) {
+  const closed = new Set(["resolvido", "resolved", "anulado", "annulled", "cancelado", "cancelled", "canceled"]);
+  return closed.has(status.toLowerCase());
+}
+
 function ticketStatusTone(status: string) {
   if (status === "com_penalidade") return "danger";
   if (status === "aguardando_comprovante") return "warning";
-  if (status === "resolvido") return "success";
+  if (status === "resolvido" || status === "anulado") return "success";
   return "neutral";
+}
+
+function dedupeTickets(rows: Ticket[]) {
+  const seen = new Set<string>();
+  return rows.filter((ticket) => {
+    const operationalId = ticket.operationalId.trim();
+    if (!operationalId) return true;
+    const key = `${ticketCategory(ticket)}:${operationalId}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function matchesTicketSearch(ticket: Ticket, query: string) {
+  const normalized = query.trim().toLocaleLowerCase("pt-BR");
+  if (!normalized) return true;
+
+  return [
+    ticket.operationalId,
+    ticket.routeId,
+    ticket.baseName,
+    ticket.detail,
+    ticketTypeLabel(ticket),
+    statusLabel(ticket.status),
+  ].some((value) => value?.toLocaleLowerCase("pt-BR").includes(normalized));
 }
 
 export function PortalApp({ initialData }: { initialData: PortalPayload }) {
@@ -131,6 +175,9 @@ export function PortalApp({ initialData }: { initialData: PortalPayload }) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [ticketView, setTicketView] = useState<TicketView>("active");
+  const [ticketCategoryFilter, setTicketCategoryFilter] = useState<TicketCategory>("all");
+  const [ticketQuery, setTicketQuery] = useState("");
   const [contest, setContest] = useState({ documentId: "", reason: "", reference: "", amount: "", description: "" });
 
   function navigate(nextTab: Tab) {
@@ -156,7 +203,9 @@ export function PortalApp({ initialData }: { initialData: PortalPayload }) {
     }
   }
 
-  const tickets = useMemo(() => data.tickets ?? [], [data]);
+  const tickets = useMemo(() => dedupeTickets(data.tickets ?? []), [data]);
+  const activeTickets = useMemo(() => tickets.filter((ticket) => !isClosedTicket(ticket.status)), [tickets]);
+  const historyTickets = useMemo(() => tickets.filter((ticket) => isClosedTicket(ticket.status)), [tickets]);
   const documents = useMemo(() => data.documents ?? [], [data]);
   const disputes = useMemo(() => data.disputes ?? [], [data]);
   const notifications = useMemo(() => data.notifications ?? [], [data]);
@@ -165,6 +214,21 @@ export function PortalApp({ initialData }: { initialData: PortalPayload }) {
   const availableDocuments = publishedDocuments.length ? publishedDocuments : documents;
   const latestDocument = availableDocuments[0];
   const openDisputes = disputes.filter((dispute) => isOpenDispute(dispute.status));
+  const ticketViewRows = ticketView === "active" ? activeTickets : historyTickets;
+  const filteredTickets = useMemo(
+    () => ticketViewRows.filter((ticket) => {
+      const categoryMatches = ticketCategoryFilter === "all" || ticketCategory(ticket) === ticketCategoryFilter;
+      return categoryMatches && matchesTicketSearch(ticket, ticketQuery);
+    }),
+    [ticketCategoryFilter, ticketQuery, ticketViewRows],
+  );
+
+  const categoryCounts = useMemo(() => ({
+    all: ticketViewRows.length,
+    pnr: ticketViewRows.filter((ticket) => ticketCategory(ticket) === "pnr").length,
+    package: ticketViewRows.filter((ticket) => ticketCategory(ticket) === "package").length,
+    occurrence: ticketViewRows.filter((ticket) => ticketCategory(ticket) === "occurrence").length,
+  }), [ticketViewRows]);
 
   async function openDocument(id: string) {
     setMessage("");
@@ -281,8 +345,8 @@ export function PortalApp({ initialData }: { initialData: PortalPayload }) {
           <div className="summary-grid">
             <button className="summary-card summary-card-wide" onClick={() => navigate("tickets")}>
               <span className="summary-icon"><Package size={20} /></span>
-              <span className="summary-copy"><b>Pendências</b><small>{tickets.length ? "Requer atenção" : "Tudo certo"}</small></span>
-              <strong>{tickets.length}</strong>
+              <span className="summary-copy"><b>Pendências</b><small>{activeTickets.length ? "Requer atenção" : "Tudo certo"}</small></span>
+              <strong>{activeTickets.length}</strong>
             </button>
             <button className="summary-card" onClick={() => navigate("payments")}>
               <span className="summary-icon"><CreditCard size={19} /></span>
@@ -301,15 +365,54 @@ export function PortalApp({ initialData }: { initialData: PortalPayload }) {
               <div><h2>Últimas pendências</h2><span>Itens mais recentes que exigem atenção.</span></div>
               <button className="mini-icon" onClick={() => void load()} aria-label="Atualizar pendências"><RefreshCw size={16} /></button>
             </div>
-            <TicketList tickets={tickets.slice(0, 4)} />
+            <TicketList tickets={activeTickets.slice(0, 4)} compact />
           </section>
         </section>
       ) : null}
 
       {tab === "tickets" ? (
-        <section className="screen-stack">
-          <h2>Pendências</h2>
-          <TicketList tickets={tickets} />
+        <section className="screen-stack ticket-screen">
+          <div className="screen-title-row">
+            <div>
+              <h2>Pendências</h2>
+              <p>{activeTickets.length === 1 ? "1 pendência ativa" : `${activeTickets.length} pendências ativas`}</p>
+            </div>
+            <button className="mini-icon" onClick={() => void load()} aria-label="Atualizar pendências"><RefreshCw size={16} /></button>
+          </div>
+
+          <div className="ticket-view-switch" role="tablist" aria-label="Situação das pendências">
+            <button className={ticketView === "active" ? "active" : ""} onClick={() => setTicketView("active")} role="tab" aria-selected={ticketView === "active"}>
+              <Package size={15} /> Ativas <span>{activeTickets.length}</span>
+            </button>
+            <button className={ticketView === "history" ? "active" : ""} onClick={() => setTicketView("history")} role="tab" aria-selected={ticketView === "history"}>
+              <History size={15} /> Histórico <span>{historyTickets.length}</span>
+            </button>
+          </div>
+
+          <label className="ticket-search">
+            <Search size={17} />
+            <input
+              value={ticketQuery}
+              onChange={(event) => setTicketQuery(event.target.value)}
+              placeholder="Buscar pacote, rota ou base"
+              aria-label="Buscar pendências"
+            />
+          </label>
+
+          <div className="ticket-filter-row" aria-label="Filtrar pendências por tipo">
+            <button className={ticketCategoryFilter === "all" ? "active" : ""} onClick={() => setTicketCategoryFilter("all")}>Todas <span>{categoryCounts.all}</span></button>
+            <button className={ticketCategoryFilter === "pnr" ? "active" : ""} onClick={() => setTicketCategoryFilter("pnr")}>PNR <span>{categoryCounts.pnr}</span></button>
+            <button className={ticketCategoryFilter === "package" ? "active" : ""} onClick={() => setTicketCategoryFilter("package")}>Pacotes <span>{categoryCounts.package}</span></button>
+            <button className={ticketCategoryFilter === "occurrence" ? "active" : ""} onClick={() => setTicketCategoryFilter("occurrence")}>Ocorrências <span>{categoryCounts.occurrence}</span></button>
+          </div>
+
+          {filteredTickets.length ? (
+            <TicketList tickets={filteredTickets} />
+          ) : (
+            <div className="empty-state ticket-empty-state">
+              {ticketQuery ? "Nenhuma pendência encontrada para essa busca." : ticketView === "history" ? "Nenhuma pendência concluída no histórico." : "Nenhuma pendência ativa neste filtro."}
+            </div>
+          )}
         </section>
       ) : null}
 
@@ -375,19 +478,20 @@ export function PortalApp({ initialData }: { initialData: PortalPayload }) {
   );
 }
 
-function TicketList({ tickets }: { tickets: Ticket[] }) {
+function TicketList({ tickets, compact = false }: { tickets: Ticket[]; compact?: boolean }) {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   if (!tickets.length) return <div className="empty-state">Nenhuma pendência.</div>;
 
   return (
-    <div className="list-stack ticket-list">
+    <div className={`list-stack ticket-list ${compact ? "compact" : ""}`}>
       {tickets.map((ticket) => {
         const isExpanded = expanded === ticket.id;
         const date = formatDate(ticket.date);
+        const category = ticketCategory(ticket);
 
         return (
-          <article className="ticket-card" key={ticket.id}>
+          <article className={`ticket-card ${isClosedTicket(ticket.status) ? "closed" : ""}`} key={ticket.id}>
             <div className="ticket-card-top">
               <div className="ticket-labels">
                 <span className="ticket-kind">{ticketTypeLabel(ticket)}</span>
@@ -403,16 +507,31 @@ function TicketList({ tickets }: { tickets: Ticket[] }) {
 
             {ticket.detail ? <p className="ticket-description">{ticket.detail}</p> : null}
 
-            <button className="ticket-detail-button" onClick={() => setExpanded(isExpanded ? null : ticket.id)}>
+            <button
+              className="ticket-detail-button"
+              onClick={() => setExpanded(isExpanded ? null : ticket.id)}
+              aria-expanded={isExpanded}
+            >
               {isExpanded ? "Ocultar detalhes" : "Ver detalhes"}
+              {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
             </button>
 
             {isExpanded ? (
-              <div className="ticket-details">
-                <div><span>Base</span><strong>{ticket.baseName || "Não informada"}</strong></div>
-                {ticket.routeId ? <div><span>Rota</span><strong>{ticket.routeId}</strong></div> : null}
-                {date ? <div><span>Data</span><strong>{date}</strong></div> : null}
-                <div><span>Status</span><strong>{statusLabel(ticket.status)}</strong></div>
+              <div className="ticket-details-wrap">
+                <div className="ticket-details">
+                  <div><span>Base</span><strong>{ticket.baseName || "Não informada"}</strong></div>
+                  <div><span>Pacote</span><strong>{ticket.operationalId || "Não informado"}</strong></div>
+                  {ticket.routeId ? <div><span>Rota</span><strong>{ticket.routeId}</strong></div> : null}
+                  {date ? <div><span>Data</span><strong>{date}</strong></div> : null}
+                  <div><span>Status</span><strong>{statusLabel(ticket.status)}</strong></div>
+                  <div><span>Valor</span><strong>{formatCurrency(ticket.value)}</strong></div>
+                </div>
+                {category === "pnr" ? (
+                  <div className="ticket-rule-note">
+                    <CheckCircle2 size={15} />
+                    <span>PNR não abre contestação por esta tela. Quando disponível, a contestação é feita pelo PDF de pagamento.</span>
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </article>
