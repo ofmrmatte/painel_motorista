@@ -15,6 +15,37 @@ function pnrStatusToTicket(status: string) {
   return "pendente";
 }
 
+function ticketDateSortValue(value: unknown) {
+  const text = textValue(value).trim();
+  if (!text) return 0;
+
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+
+  const br = text.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (br) return Date.UTC(Number(br[3]), Number(br[2]) - 1, Number(br[1]));
+
+  const parsed = Date.parse(text);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function mapDisputeMessages(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((message) => {
+      const row = message as DbRow;
+      return {
+        id: textValue(row.id),
+        body: textValue(row.body),
+        created_at: textValue(row.created_at),
+        author_driver_id: textValue(row.author_driver_id) || undefined,
+        author_admin_id: textValue(row.author_admin_id) || undefined,
+      };
+    })
+    .filter((message) => message.body)
+    .sort((a, b) => ticketDateSortValue(a.created_at) - ticketDateSortValue(b.created_at));
+}
+
 export async function loadDriverPortalPayload(driver: DbRow) {
   const admin = createAdminClient();
   const driverId = textValue(driver.id);
@@ -86,7 +117,6 @@ export async function loadDriverPortalPayload(driver: DbRow) {
   const tickets = [
     ...prefaturaRows.map((row) => {
       const operation = textValue(row.operation);
-      const date = textValue(row.route_date) || textValue(row.created_at);
       return {
         id: `prefatura:${textValue(row.id)}`,
         type: operation === "PNR" ? "pnr" : "pacote_perdido",
@@ -97,7 +127,7 @@ export async function loadDriverPortalPayload(driver: DbRow) {
         sigla: textValue(row.sigla),
         driverCode,
         driverName: textValue(row.driver_name),
-        date,
+        date: textValue(row.route_date),
         value: numberValue(row.value),
         status: "com_penalidade",
         source: "prefatura",
@@ -116,7 +146,7 @@ export async function loadDriverPortalPayload(driver: DbRow) {
         sigla: textValue(row.sigla),
         driverCode,
         driverName: textValue(driver.full_name),
-        date: textValue(row.case_date) || textValue(row.created_at),
+        date: textValue(row.case_date),
         value: numberValue(row.purchase_value),
         status,
         source: "pnr",
@@ -133,13 +163,13 @@ export async function loadDriverPortalPayload(driver: DbRow) {
       sigla: textValue(row.sigla),
       driverCode,
       driverName: textValue(driver.full_name),
-      date: textValue(row.failure_date) || textValue(row.created_at),
+      date: textValue(row.failure_date),
       value: numberValue(row.gmv_brl),
       status: "pendente",
       source: "risk",
       detail: textValue(row.failure_reason) || "Ocorrencia operacional em acompanhamento.",
     })),
-  ].sort((a, b) => textValue(b.date).localeCompare(textValue(a.date)));
+  ].sort((a, b) => ticketDateSortValue(b.date) - ticketDateSortValue(a.date));
 
   return {
     driver: {
@@ -165,7 +195,11 @@ export async function loadDriverPortalPayload(driver: DbRow) {
       status: textValue(row.status),
       decision: textValue(row.decision),
       description: textValue(row.description),
-      driver_payment_documents: (row.driver_payment_documents as { title?: string } | null) ?? undefined,
+      reference: textValue(row.reference),
+      amount: row.amount == null || textValue(row.amount) === "" ? null : numberValue(row.amount),
+      created_at: textValue(row.created_at),
+      updated_at: textValue(row.updated_at),
+      messages: mapDisputeMessages(row.driver_dispute_messages),
     })),
     notifications: notificationRows.map((row) => ({
       id: textValue(row.id),
