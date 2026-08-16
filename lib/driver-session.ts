@@ -1,5 +1,6 @@
 import { cookies, headers } from "next/headers";
 import { createOpaqueToken, hashToken, normalizeDriverCode } from "@/lib/auth-core";
+import { loadEffectiveDriverPortalAccess } from "@/lib/driver-access";
 import { textValue } from "@/lib/format";
 import { createAdminClient, pinPepper } from "@/lib/supabase-admin";
 
@@ -111,7 +112,16 @@ export async function currentDriver() {
     .update({ last_seen_at: new Date().toISOString() })
     .eq("id", textValue(data.id));
   const driver = data.alc_drivers as DbRow | null;
-  if (!driver || textValue(driver.portal_status) !== "active") return null;
+  const access = await loadEffectiveDriverPortalAccess(driver);
+  if (!driver || textValue(driver.portal_status) !== "active" || !access.allowed) {
+    await admin
+      .from("driver_portal_sessions")
+      .update({ revoked_at: new Date().toISOString() })
+      .eq("id", textValue(data.id))
+      .is("revoked_at", null);
+    cookieStore.delete(SESSION_COOKIE);
+    return null;
+  }
   await admin.from("alc_drivers").update({ last_seen_at: new Date().toISOString() }).eq("id", textValue(driver.id));
   return driver;
 }

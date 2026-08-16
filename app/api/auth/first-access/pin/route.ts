@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { genericAuthError, hashPin, validatePin } from "@/lib/auth-core";
+import { loadEffectiveDriverPortalAccess } from "@/lib/driver-access";
 import { consumeSetupToken, recordAuthAttempt, requestOrigin, setDriverSession } from "@/lib/driver-session";
 import { textValue } from "@/lib/format";
 import { createAdminClient, pinPepper } from "@/lib/supabase-admin";
@@ -26,6 +27,8 @@ export async function POST(request: Request) {
     const driver = setup.alc_drivers as Record<string, unknown> | null;
     driverCode = textValue(driver?.driver_code);
     if (!driver || textValue(driver.portal_status) === "active" || textValue(driver.portal_status) === "blocked") throw new Error("not_allowed");
+    const access = await loadEffectiveDriverPortalAccess(driver);
+    if (!access.allowed) throw new Error(access.reason);
 
     const admin = createAdminClient();
     const existing = await admin.from("driver_portal_credentials").select("driver_id").eq("driver_id", driverId).maybeSingle();
@@ -59,4 +62,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: genericAuthError() }, { status: 400 });
   }
 }
-

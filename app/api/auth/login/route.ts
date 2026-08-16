@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { genericAuthError, isRateLimited, normalizeDriverCode, validatePin, verifyPin } from "@/lib/auth-core";
+import { loadEffectiveDriverPortalAccess } from "@/lib/driver-access";
 import { recentFailedAttempts, recordAuthAttempt, requestOrigin, setDriverSession } from "@/lib/driver-session";
 import { textValue } from "@/lib/format";
 import { createAdminClient, pinPepper } from "@/lib/supabase-admin";
@@ -34,6 +35,8 @@ export async function POST(request: Request) {
     const driver = driverResult.data;
     driverId = textValue(driver?.id) || null;
     if (!driver || !driverId || textValue(driver.portal_status) !== "active") throw new Error("invalid_credentials");
+    const access = await loadEffectiveDriverPortalAccess(driver);
+    if (!access.allowed) throw new Error(access.reason);
     const credentialResult = await admin.from("driver_portal_credentials").select("*").eq("driver_id", driverId).maybeSingle();
     if (credentialResult.error) throw new Error(credentialResult.error.message);
     const credential = credentialResult.data;

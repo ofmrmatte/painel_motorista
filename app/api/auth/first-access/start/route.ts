@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { genericAuthError, isRateLimited, normalizeBaseSigla, normalizeDriverCode } from "@/lib/auth-core";
+import { loadEffectiveDriverPortalAccess } from "@/lib/driver-access";
 import { createSetupToken, recentFailedAttempts, recordAuthAttempt, requestOrigin } from "@/lib/driver-session";
 import { textValue } from "@/lib/format";
 import { createAdminClient } from "@/lib/supabase-admin";
@@ -36,8 +37,8 @@ export async function POST(request: Request) {
     driverId = textValue(driver?.id) || null;
     const driverSigla = normalizeBaseSigla(driver?.sigla);
     const portalStatus = textValue(driver?.portal_status);
-    const eligible = Boolean(driver?.portal_eligible);
-    if (!driver || driverSigla !== baseSigla || !eligible || portalStatus === "blocked" || portalStatus === "inactive") {
+    const access = await loadEffectiveDriverPortalAccess(driver);
+    if (!driver || driverSigla !== baseSigla || !access.allowed) {
       throw new Error("not_allowed");
     }
     if (portalStatus === "active") {
