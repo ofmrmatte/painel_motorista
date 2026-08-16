@@ -53,7 +53,7 @@ export async function loadDriverPortalPayload(driver: DbRow) {
     readPaged<DbRow>(async (offset, pageSize) => {
       const { data, error, count } = await admin
         .from("driver_payment_documents")
-        .select("*,driver_payment_document_versions(id,version_number,status,created_at)", { count: "exact" })
+        .select("*,driver_payment_document_versions:driver_payment_document_versions!driver_payment_document_versions_document_id_fkey(id,version_number,status,created_at)", { count: "exact" })
         .eq("driver_id", driverId)
         .in("status", ["published", "superseded"])
         .order("created_at", { ascending: false })
