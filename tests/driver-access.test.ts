@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getEffectiveDriverPortalAccess, isDriverPortalBlockingStatus } from "@/lib/driver-access";
+import { driverPortalBaseAccessKey, getEffectiveDriverPortalAccess, isDriverPortalBlockingStatus } from "@/lib/driver-access";
 
 describe("acesso efetivo do portal do motorista", () => {
   it("login exige base liberada e motorista elegivel", () => {
@@ -29,5 +29,10 @@ describe("acesso efetivo do portal do motorista", () => {
     expect(isDriverPortalBlockingStatus("blocked")).toBe(true);
     expect(isDriverPortalBlockingStatus("inactive")).toBe(true);
     expect(isDriverPortalBlockingStatus("reset_required")).toBe(false);
+  });
+
+  it("usa a sigla como chave do rollout antes do nome da base", () => {
+    expect(driverPortalBaseAccessKey("GUAXUPE", "EMG7")).toBe("EMG7");
+    expect(driverPortalBaseAccessKey("GUAXUPE", "")).toBe("GUAXUPE");
   });
 });

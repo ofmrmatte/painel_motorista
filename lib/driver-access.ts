@@ -8,6 +8,10 @@ export function isDriverPortalBlockingStatus(status: unknown) {
   return normalized === "blocked" || normalized === "inactive";
 }
 
+export function driverPortalBaseAccessKey(baseKey: unknown, sigla?: unknown) {
+  return textValue(sigla).trim().toUpperCase() || textValue(baseKey).trim().toUpperCase();
+}
+
 export function getEffectiveDriverPortalAccess(driver: DbRow | null | undefined, baseEnabled: boolean) {
   const portalStatus = textValue(driver?.portal_status);
   const driverEligible = Boolean(driver?.portal_eligible);
@@ -30,7 +34,7 @@ export function getEffectiveDriverPortalAccess(driver: DbRow | null | undefined,
 }
 
 export async function loadDriverPortalBaseEnabled(baseKey: unknown) {
-  const normalized = textValue(baseKey).trim().toUpperCase();
+  const normalized = driverPortalBaseAccessKey(baseKey);
   if (!normalized) return false;
   const admin = createAdminClient();
   const { data, error } = await admin
@@ -43,6 +47,6 @@ export async function loadDriverPortalBaseEnabled(baseKey: unknown) {
 }
 
 export async function loadEffectiveDriverPortalAccess(driver: DbRow | null | undefined) {
-  const baseEnabled = await loadDriverPortalBaseEnabled(driver?.base_key);
+  const baseEnabled = await loadDriverPortalBaseEnabled(driverPortalBaseAccessKey(driver?.base_key, driver?.sigla));
   return getEffectiveDriverPortalAccess(driver, baseEnabled);
 }
