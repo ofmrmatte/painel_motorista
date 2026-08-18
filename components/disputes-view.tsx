@@ -1,323 +1,54 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import {
-  CalendarDays,
-  CheckCircle2,
-  ChevronDown,
-  ChevronUp,
-  CircleDot,
-  FileText,
-  MessageSquarePlus,
-  Plus,
-  X,
-} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { CalendarDays, CheckCircle2, ChevronDown, ChevronUp, CircleDot, FileText, MessageSquarePlus, Plus, Send, X } from "lucide-react";
 import { formatCurrency } from "@/lib/format";
 import { paymentWeekLabel, type PaymentDocument } from "./payments-view";
 import styles from "./disputes-view.module.css";
 
-export interface ContestDraft {
-  documentId: string;
-  reason: string;
-  reference: string;
-  amount: string;
-  description: string;
-}
-
-export interface DisputeMessage {
-  id?: string;
-  body?: string;
-  created_at?: string;
-  author_driver_id?: string;
-  author_admin_id?: string;
-}
-
-export interface DisputeRecord {
-  id: string;
-  document_id: string;
-  reason: string;
-  status: string;
-  decision?: string;
-  description?: string;
-  reference?: string;
-  amount?: number | null;
-  created_at?: string;
-  updated_at?: string;
-  messages?: DisputeMessage[];
-}
+export interface ContestDraft { documentId: string; reason: string; reference: string; amount: string; description: string }
+export interface DisputeMessage { id?: string; body?: string; created_at?: string; author_driver_id?: string; author_profile_id?: string; author_admin_id?: string }
+export interface DisputeRecord { id: string; protocol?: string; document_id: string; reason: string; status: string; decision?: string; description?: string; reference?: string; amount?: number | null; created_at?: string; updated_at?: string; messages?: DisputeMessage[] }
 
 type Filter = "all" | "active" | "answered" | "closed";
-
 type Bucket = Exclude<Filter, "all">;
+const reasonOptions = ["Valor divergente", "Lançamento não reconhecido", "Desconto indevido", "Informação incorreta", "Outro"];
 
-const reasonOptions = [
-  "Valor divergente",
-  "Lançamento não reconhecido",
-  "Desconto indevido",
-  "Informação incorreta",
-  "Outro",
-];
+function normalizedStatus(status: string) { return status.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replaceAll("-", "_").replaceAll(" ", "_"); }
+function disputeBucket(status: string): Bucket { const value = normalizedStatus(status); if (["deferida", "indeferida", "concluida", "aprovada", "approved", "rejected", "resolved", "closed", "finalizada"].includes(value)) return "closed"; if (["aguardando_informacao", "pdf_em_correcao", "respondida", "answered", "aguardando_motorista"].includes(value)) return "answered"; return "active"; }
+function statusLabel(status: string) { const labels: Record<string, string> = { aberta: "Aberta", em_analise: "Em análise", aguardando_informacao: "Aguardando seu retorno", pdf_em_correcao: "Aguardando novo PDF", deferida: "Deferida", indeferida: "Indeferida", concluida: "Concluída", respondida: "Respondida", aguardando_motorista: "Aguardando motorista" }; return labels[normalizedStatus(status)] || status.replaceAll("_", " "); }
+function statusTone(status: string) { const value = normalizedStatus(status); if (["deferida", "concluida", "aprovada", "approved", "resolved"].includes(value)) return styles.success; if (["indeferida", "rejected"].includes(value)) return styles.danger; if (disputeBucket(status) === "answered") return styles.answered; return styles.activeStatus; }
+function formatDateTime(value?: string) { if (!value) return "Data não informada"; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(date); }
+function disputeCode(dispute: DisputeRecord) { if (dispute.protocol) return `#${dispute.protocol}`; const date = dispute.created_at ? new Date(dispute.created_at) : new Date(); const day = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(date).replaceAll("-", ""); const compact = dispute.id.replaceAll("-", "").slice(0, 6).toUpperCase(); return `#CON-${day}-${compact}`; }
+function progressIndex(status: string) { if (disputeBucket(status) === "closed") return 3; if (normalizedStatus(status) !== "aberta") return 2; return 1; }
+function documentLabel(documentId: string, documents: PaymentDocument[]) { const document = documents.find((item) => item.id === documentId); return document ? paymentWeekLabel(document.period) : "Demonstrativo de pagamento"; }
+async function readError(response: Response, fallback: string) { return response.json().then((body) => body.error || fallback).catch(() => fallback); }
 
-function normalizedStatus(status: string) {
-  return status
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replaceAll("-", "_")
-    .replaceAll(" ", "_");
-}
-
-function disputeBucket(status: string): Bucket {
-  const value = normalizedStatus(status);
-  if (["aprovada", "aprovado", "approved", "recusada", "recusado", "rejected", "resolvida", "resolvido", "resolved", "encerrada", "encerrado", "closed", "finalizada", "finalizado", "finalized"].includes(value)) return "closed";
-  if (["respondida", "respondido", "answered", "replied", "aguardando_motorista", "waiting_driver"].includes(value)) return "answered";
-  return "active";
-}
-
-function statusLabel(status: string) {
-  const value = normalizedStatus(status);
-  const labels: Record<string, string> = {
-    aberta: "Aberta",
-    open: "Aberta",
-    em_analise: "Em análise",
-    analise: "Em análise",
-    in_review: "Em análise",
-    pending: "Em análise",
-    respondida: "Respondida",
-    respondido: "Respondida",
-    answered: "Respondida",
-    replied: "Respondida",
-    aguardando_motorista: "Aguardando motorista",
-    waiting_driver: "Aguardando motorista",
-    aprovada: "Aprovada",
-    aprovado: "Aprovada",
-    approved: "Aprovada",
-    recusada: "Recusada",
-    recusado: "Recusada",
-    rejected: "Recusada",
-    resolvida: "Finalizada",
-    resolvido: "Finalizada",
-    resolved: "Finalizada",
-    encerrada: "Finalizada",
-    encerrado: "Finalizada",
-    closed: "Finalizada",
-    finalizada: "Finalizada",
-    finalizado: "Finalizada",
-    finalized: "Finalizada",
-  };
-  return labels[value] || status.replaceAll("_", " ");
-}
-
-function statusTone(status: string) {
-  const value = normalizedStatus(status);
-  if (["aprovada", "aprovado", "approved", "resolvida", "resolvido", "resolved", "finalizada", "finalizado", "finalized"].includes(value)) return styles.success;
-  if (["recusada", "recusado", "rejected"].includes(value)) return styles.danger;
-  if (disputeBucket(status) === "answered") return styles.answered;
-  return styles.activeStatus;
-}
-
-function formatDateTime(value?: string) {
-  if (!value) return "Data não informada";
-  const date = new Date(value);
-  if (!Number.isNaN(date.getTime())) {
-    return new Intl.DateTimeFormat("pt-BR", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(date);
-  }
-  return value;
-}
-
-function disputeCode(id: string) {
-  const compact = id.replaceAll("-", "").slice(-6).toUpperCase();
-  return `#CON-${compact || id.slice(0, 6).toUpperCase()}`;
-}
-
-function progressIndex(status: string) {
-  const bucket = disputeBucket(status);
-  if (bucket === "closed") return 3;
-  const value = normalizedStatus(status);
-  if (bucket === "answered" || value.includes("analise") || value === "in_review") return 2;
-  return 1;
-}
-
-function documentLabel(documentId: string, documents: PaymentDocument[]) {
-  const document = documents.find((item) => item.id === documentId);
-  return document ? paymentWeekLabel(document.period) : "Demonstrativo de pagamento";
-}
-
-export function DisputesView({
-  disputes,
-  documents,
-  draft,
-  onDraftChange,
-  onSubmit,
-  submitting = false,
-}: {
-  disputes: DisputeRecord[];
-  documents: PaymentDocument[];
-  draft: ContestDraft;
-  onDraftChange: (patch: Partial<ContestDraft>) => void;
-  onSubmit: () => void | Promise<void>;
-  submitting?: boolean;
-}) {
+export function DisputesView({ disputes, documents, draft, onDraftChange, onSubmit, submitting = false }: { disputes: DisputeRecord[]; documents: PaymentDocument[]; draft: ContestDraft; onDraftChange: (patch: Partial<ContestDraft>) => void; onSubmit: () => void | Promise<void>; submitting?: boolean }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [formOpen, setFormOpen] = useState(Boolean(draft.documentId));
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [rows, setRows] = useState(disputes);
+  const [reply, setReply] = useState<Record<string, string>>({});
+  const [busyId, setBusyId] = useState("");
+  const [error, setError] = useState("");
+  useEffect(() => setRows(disputes), [disputes]);
 
   const publishedDocuments = useMemo(() => documents.filter((document) => document.status === "published"), [documents]);
-  const counts = useMemo(() => ({
-    all: disputes.length,
-    active: disputes.filter((item) => disputeBucket(item.status) === "active").length,
-    answered: disputes.filter((item) => disputeBucket(item.status) === "answered").length,
-    closed: disputes.filter((item) => disputeBucket(item.status) === "closed").length,
-  }), [disputes]);
-  const rows = useMemo(() => filter === "all" ? disputes : disputes.filter((item) => disputeBucket(item.status) === filter), [disputes, filter]);
+  const counts = useMemo(() => ({ all: rows.length, active: rows.filter((item) => disputeBucket(item.status) === "active").length, answered: rows.filter((item) => disputeBucket(item.status) === "answered").length, closed: rows.filter((item) => disputeBucket(item.status) === "closed").length }), [rows]);
+  const filtered = useMemo(() => filter === "all" ? rows : rows.filter((item) => disputeBucket(item.status) === filter), [rows, filter]);
   const canSubmit = Boolean(draft.documentId && draft.reason && draft.description.trim().length >= 5) && !submitting;
 
-  return (
-    <section className={styles.screen}>
-      <div className={styles.titleRow}>
-        <div>
-          <h2>Contestações</h2>
-          <p>{counts.active + counts.answered === 1 ? "1 contestação em andamento" : `${counts.active + counts.answered} contestações em andamento`}</p>
-        </div>
-        <button className={styles.newButton} onClick={() => setFormOpen((open) => !open)}>
-          {formOpen ? <X size={16} /> : <Plus size={16} />}
-          {formOpen ? "Fechar" : "Nova"}
-        </button>
-      </div>
+  async function openDocument(documentId: string) { setError(""); const response = await fetch(`/api/documents/${documentId}/download`, { cache: "no-store" }); if (!response.ok) { setError(await readError(response, "Falha ao abrir PDF.")); return; } const payload = await response.json(); window.open(payload.url, "_blank", "noopener,noreferrer"); }
+  async function sendReply(dispute: DisputeRecord) { const message = (reply[dispute.id] || "").trim(); if (!message || busyId) return; setBusyId(dispute.id); setError(""); try { const response = await fetch("/api/disputes", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: dispute.id, message }) }); if (!response.ok) throw new Error(await readError(response, "Falha ao responder contestação.")); const body = await response.json(); const created = body.message as DisputeMessage; setRows((current) => current.map((item) => item.id === dispute.id ? { ...item, status: body.dispute?.status || item.status, updated_at: body.dispute?.updated_at || item.updated_at, messages: [...(item.messages ?? []), created] } : item)); setReply((current) => ({ ...current, [dispute.id]: "" })); } catch (err) { setError(err instanceof Error ? err.message : "Falha ao responder contestação."); } finally { setBusyId(""); } }
 
-      {formOpen ? (
-        <section className={styles.formCard} aria-label="Nova contestação">
-          <div className={styles.formHeader}>
-            <span className={styles.formIcon}><MessageSquarePlus size={19} /></span>
-            <div>
-              <strong>Nova contestação</strong>
-              <small>A contestação ficará vinculada ao PDF selecionado.</small>
-            </div>
-          </div>
+  return <section className={styles.screen}>
+    <div className={styles.titleRow}><div><h2>Contestações</h2><p>{counts.active + counts.answered} em andamento</p></div><button className={styles.newButton} onClick={() => setFormOpen((open) => !open)}>{formOpen ? <X size={16} /> : <Plus size={16} />}{formOpen ? "Fechar" : "Nova"}</button></div>
+    {error ? <p style={{ color: "#b8000b", fontSize: 13 }}>{error}</p> : null}
+    {formOpen ? <section className={styles.formCard} aria-label="Nova contestação"><div className={styles.formHeader}><span className={styles.formIcon}><MessageSquarePlus size={19} /></span><div><strong>Nova contestação</strong><small>Informe o motivo e descreva com clareza a divergência do PDF.</small></div></div><label className={styles.field}><span>Demonstrativo de pagamento</span><select value={draft.documentId} onChange={(event) => onDraftChange({ documentId: event.target.value })}><option value="">Selecione o PDF</option>{publishedDocuments.map((document) => <option key={document.id} value={document.id}>{paymentWeekLabel(document.period)}</option>)}</select></label><label className={styles.field}><span>Motivo</span><select value={draft.reason} onChange={(event) => onDraftChange({ reason: event.target.value })}><option value="">Selecione o motivo</option>{reasonOptions.map((reason) => <option key={reason} value={reason}>{reason}</option>)}</select></label><div className={styles.twoColumns}><label className={styles.field}><span>Referência <small>opcional</small></span><input value={draft.reference} onChange={(event) => onDraftChange({ reference: event.target.value })} placeholder="Pacote, rota ou lançamento" /></label><label className={styles.field}><span>Valor contestado <small>opcional</small></span><div className={styles.moneyField}><span>R$</span><input value={draft.amount} onChange={(event) => onDraftChange({ amount: event.target.value })} inputMode="decimal" placeholder="0,00" /></div></label></div><label className={styles.field}><span>Descrição</span><textarea value={draft.description} onChange={(event) => onDraftChange({ description: event.target.value })} placeholder="Explique o que está incorreto e qual correção você solicita." /><small className={styles.helper}>Esta descrição ficará registrada no protocolo e no histórico da tratativa.</small></label><button className={styles.submitButton} disabled={!canSubmit} onClick={() => void onSubmit()}><MessageSquarePlus size={17} />{submitting ? "Enviando..." : "Enviar contestação"}</button></section> : null}
 
-          <label className={styles.field}>
-            <span>Demonstrativo de pagamento</span>
-            <select value={draft.documentId} onChange={(event) => onDraftChange({ documentId: event.target.value })}>
-              <option value="">Selecione o PDF</option>
-              {publishedDocuments.map((document) => (
-                <option key={document.id} value={document.id}>{paymentWeekLabel(document.period)}</option>
-              ))}
-            </select>
-          </label>
+    <div className={styles.filters}><button className={filter === "all" ? styles.selected : ""} onClick={() => setFilter("all")}>Todas <span>{counts.all}</span></button><button className={filter === "active" ? styles.selected : ""} onClick={() => setFilter("active")}>Em análise <span>{counts.active}</span></button><button className={filter === "answered" ? styles.selected : ""} onClick={() => setFilter("answered")}>Aguardando retorno <span>{counts.answered}</span></button><button className={filter === "closed" ? styles.selected : ""} onClick={() => setFilter("closed")}>Finalizadas <span>{counts.closed}</span></button></div>
 
-          <label className={styles.field}>
-            <span>Motivo</span>
-            <select value={draft.reason} onChange={(event) => onDraftChange({ reason: event.target.value })}>
-              <option value="">Selecione o motivo</option>
-              {reasonOptions.map((reason) => <option key={reason} value={reason}>{reason}</option>)}
-            </select>
-          </label>
-
-          <div className={styles.twoColumns}>
-            <label className={styles.field}>
-              <span>Referência <small>opcional</small></span>
-              <input value={draft.reference} onChange={(event) => onDraftChange({ reference: event.target.value })} placeholder="Pacote, rota ou lançamento" />
-            </label>
-            <label className={styles.field}>
-              <span>Valor contestado <small>opcional</small></span>
-              <div className={styles.moneyField}><span>R$</span><input value={draft.amount} onChange={(event) => onDraftChange({ amount: event.target.value })} inputMode="decimal" placeholder="0,00" /></div>
-            </label>
-          </div>
-
-          <label className={styles.field}>
-            <span>Descrição</span>
-            <textarea value={draft.description} onChange={(event) => onDraftChange({ description: event.target.value })} placeholder="Explique de forma objetiva qual informação do PDF está divergente." />
-            <small className={styles.helper}>Informe o que está incorreto e, quando possível, identifique pacote, rota, lançamento ou valor.</small>
-          </label>
-
-          <button className={styles.submitButton} disabled={!canSubmit} onClick={() => void onSubmit()}>
-            <MessageSquarePlus size={17} /> {submitting ? "Enviando..." : "Enviar contestação"}
-          </button>
-        </section>
-      ) : null}
-
-      <div className={styles.filters} aria-label="Filtrar contestações">
-        <button className={filter === "all" ? styles.selected : ""} onClick={() => setFilter("all")}>Todas <span>{counts.all}</span></button>
-        <button className={filter === "active" ? styles.selected : ""} onClick={() => setFilter("active")}>Em análise <span>{counts.active}</span></button>
-        <button className={filter === "answered" ? styles.selected : ""} onClick={() => setFilter("answered")}>Respondidas <span>{counts.answered}</span></button>
-        <button className={filter === "closed" ? styles.selected : ""} onClick={() => setFilter("closed")}>Finalizadas <span>{counts.closed}</span></button>
-      </div>
-
-      {rows.length ? (
-        <div className={styles.list}>
-          {rows.map((dispute) => {
-            const isExpanded = expanded === dispute.id;
-            const currentStep = progressIndex(dispute.status);
-            return (
-              <article className={styles.card} key={dispute.id}>
-                <div className={styles.cardTop}>
-                  <div className={styles.cardIdentity}>
-                    <span>{disputeCode(dispute.id)}</span>
-                    <strong>{dispute.reason}</strong>
-                    <small>{documentLabel(dispute.document_id, documents)}</small>
-                  </div>
-                  <span className={`${styles.status} ${statusTone(dispute.status)}`}>{statusLabel(dispute.status)}</span>
-                </div>
-
-                <div className={styles.progress} aria-label="Andamento da contestação">
-                  <div className={currentStep >= 1 ? styles.done : ""}><span><CheckCircle2 size={13} /></span><small>Enviada</small></div>
-                  <i className={currentStep >= 2 ? styles.doneLine : ""} />
-                  <div className={currentStep >= 2 ? styles.done : ""}><span><CircleDot size={12} /></span><small>{disputeBucket(dispute.status) === "answered" ? "Respondida" : "Em análise"}</small></div>
-                  <i className={currentStep >= 3 ? styles.doneLine : ""} />
-                  <div className={currentStep >= 3 ? styles.done : ""}><span><CheckCircle2 size={13} /></span><small>Finalizada</small></div>
-                </div>
-
-                <div className={styles.metaRow}>
-                  <span><CalendarDays size={14} /> Aberta em {formatDateTime(dispute.created_at)}</span>
-                  {dispute.amount != null ? <strong>{formatCurrency(dispute.amount)}</strong> : null}
-                </div>
-
-                <button className={styles.detailsButton} onClick={() => setExpanded(isExpanded ? null : dispute.id)} aria-expanded={isExpanded}>
-                  {isExpanded ? "Ocultar detalhes" : "Ver detalhes"}
-                  {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                </button>
-
-                {isExpanded ? (
-                  <div className={styles.details}>
-                    <div className={styles.detailGrid}>
-                      <div><span>PDF</span><strong>{documentLabel(dispute.document_id, documents)}</strong></div>
-                      <div><span>Status</span><strong>{statusLabel(dispute.status)}</strong></div>
-                      {dispute.reference ? <div><span>Referência</span><strong>{dispute.reference}</strong></div> : null}
-                      {dispute.amount != null ? <div><span>Valor</span><strong>{formatCurrency(dispute.amount)}</strong></div> : null}
-                    </div>
-                    {dispute.description ? <div className={styles.textBlock}><span>Descrição enviada</span><p>{dispute.description}</p></div> : null}
-                    {dispute.decision ? <div className={`${styles.textBlock} ${styles.decision}`}><span>Resposta da Administração</span><p>{dispute.decision}</p></div> : null}
-                    {dispute.messages?.length ? (
-                      <div className={styles.timeline}>
-                        <span>Histórico</span>
-                        {dispute.messages.map((message, index) => (
-                          <div key={message.id || `${dispute.id}-${index}`}>
-                            <i />
-                            <p>{message.body}</p>
-                            <small>{formatDateTime(message.created_at)}</small>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-              </article>
-            );
-          })}
-        </div>
-      ) : (
-        <div className={styles.empty}>
-          <MessageSquarePlus size={25} />
-          <strong>{filter === "all" ? "Nenhuma contestação registrada" : "Nenhuma contestação neste status"}</strong>
-          <span>{filter === "all" ? "Quando precisar contestar um PDF, use o botão Nova." : "Altere o filtro para consultar outras contestações."}</span>
-        </div>
-      )}
-    </section>
-  );
+    {filtered.length ? <div className={styles.list}>{filtered.map((dispute) => { const isExpanded = expanded === dispute.id; const currentStep = progressIndex(dispute.status); const closed = disputeBucket(dispute.status) === "closed"; return <article className={styles.card} key={dispute.id}><div className={styles.cardTop}><div className={styles.cardIdentity}><span>{disputeCode(dispute)}</span><strong>{dispute.reason}</strong><small>{documentLabel(dispute.document_id, documents)}</small></div><span className={`${styles.status} ${statusTone(dispute.status)}`}>{statusLabel(dispute.status)}</span></div><div className={styles.progress}><div className={currentStep >= 1 ? styles.done : ""}><span><CheckCircle2 size={13} /></span><small>Enviada</small></div><i className={currentStep >= 2 ? styles.doneLine : ""} /><div className={currentStep >= 2 ? styles.done : ""}><span><CircleDot size={12} /></span><small>Em tratativa</small></div><i className={currentStep >= 3 ? styles.doneLine : ""} /><div className={currentStep >= 3 ? styles.done : ""}><span><CheckCircle2 size={13} /></span><small>Finalizada</small></div></div><div className={styles.metaRow}><span><CalendarDays size={14} /> Aberta em {formatDateTime(dispute.created_at)}</span>{dispute.amount != null ? <strong>{formatCurrency(dispute.amount)}</strong> : null}</div><button className={styles.detailsButton} onClick={() => setExpanded(isExpanded ? null : dispute.id)}>{isExpanded ? "Ocultar detalhes" : "Ver detalhes"}{isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</button>{isExpanded ? <div className={styles.details}><div className={styles.detailGrid}><div><span>Protocolo</span><strong>{disputeCode(dispute)}</strong></div><div><span>Status</span><strong>{statusLabel(dispute.status)}</strong></div>{dispute.reference ? <div><span>Referência</span><strong>{dispute.reference}</strong></div> : null}{dispute.amount != null ? <div><span>Valor</span><strong>{formatCurrency(dispute.amount)}</strong></div> : null}</div><div className={styles.textBlock}><span>Descrição enviada</span><p>{dispute.description || "Sem descrição."}</p></div><button className={styles.detailsButton} onClick={() => void openDocument(dispute.document_id)}><FileText size={15} /> Visualizar PDF</button>{dispute.decision ? <div className={`${styles.textBlock} ${styles.decision}`}><span>Resposta da Administração</span><p>{dispute.decision}</p></div> : null}<div className={styles.timeline}><span>Histórico de mensagens</span>{(dispute.messages ?? []).map((message, index) => <div key={message.id || `${dispute.id}-${index}`}><i /><p><strong>{message.author_driver_id ? "Você" : "Administração"}</strong><br />{message.body}</p><small>{formatDateTime(message.created_at)}</small></div>)}{!(dispute.messages ?? []).length ? <small>Nenhuma mensagem registrada.</small> : null}</div>{!closed ? <div><label className={styles.field}><span>Responder</span><textarea value={reply[dispute.id] || ""} onChange={(event) => setReply((current) => ({ ...current, [dispute.id]: event.target.value }))} placeholder="Envie uma informação ou resposta para a Administração." /></label><button className={styles.submitButton} disabled={!reply[dispute.id]?.trim() || busyId === dispute.id} onClick={() => void sendReply(dispute)}><Send size={16} />{busyId === dispute.id ? "Enviando..." : "Enviar mensagem"}</button></div> : null}</div> : null}</article>; })}</div> : <div className={styles.empty}><MessageSquarePlus size={25} /><strong>Nenhuma contestação neste status</strong><span>Altere o filtro ou abra uma nova contestação.</span></div>}
+  </section>;
 }
